@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	// Minimum dust amount per output (1 satoshi)
-	DustAmount = 1
+	// Minimum dust amount per output (546 satoshis is standard for BSV)
+	DustAmount = 546
 	// Minimum fee for miners (1 satoshi)
 	MinimumFee = 1
 	// Estimated fee per byte (can be used for larger transactions)
@@ -148,8 +148,17 @@ func (b *Builder) BuildSplitTransaction(utxo *models.UTXO, numOutputs int) (*tra
 }
 
 func (b *Builder) addInputFromUTXO(tx *transaction.Transaction, utxo *models.UTXO) error {
+	// Ensure transaction hash is 64 characters
+	txHash := utxo.TxHash
+	if len(txHash) == 63 {
+		// Missing one character, likely a leading zero
+		txHash = "0" + txHash
+	} else if len(txHash) < 64 {
+		return fmt.Errorf("invalid transaction hash length: got %d, expected 64 for hash %s", len(txHash), txHash)
+	}
+	
 	// Parse transaction ID
-	txID, err := hex.DecodeString(utxo.TxHash)
+	txID, err := hex.DecodeString(txHash)
 	if err != nil {
 		return fmt.Errorf("failed to decode tx hash: %w", err)
 	}
@@ -180,9 +189,9 @@ func (b *Builder) addInputFromUTXO(tx *transaction.Transaction, utxo *models.UTX
 		return fmt.Errorf("failed to create locking script: %w", err)
 	}
 
-	// Add input to transaction
+	// Add input to transaction (use the padded hash)
 	err = tx.AddInputFrom(
-		utxo.TxHash,
+		txHash,
 		utxo.Vout,
 		hex.EncodeToString(*prevLockingScript),
 		utxo.Amount,
@@ -191,6 +200,10 @@ func (b *Builder) addInputFromUTXO(tx *transaction.Transaction, utxo *models.UTX
 	if err != nil {
 		return fmt.Errorf("failed to add input: %w", err)
 	}
+	
+	// Debug: Log what we're adding
+	fmt.Printf("AddInputFrom: txHash=%s, vout=%d, amount=%d, script=%s\n",
+		txHash, utxo.Vout, utxo.Amount, hex.EncodeToString(*prevLockingScript)[:40])
 
 	return nil
 }

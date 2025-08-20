@@ -114,3 +114,44 @@ The `DirectBatchBroadcaster` in `batch_propagation.go` directly calls the gRPC `
 
 3. **Database migration errors**: Adding columns to existing database
    - Solution: Migration code suppresses "column already exists" errors
+
+4. **BLOB_EXISTS errors**: Transaction already exists in mempool/blockchain
+   - Solution: Treat as success (see blast.go lines 224-230)
+
+## Development History and TODOs
+
+### Completed Tasks
+1. ✅ Explore teranode asset HTTP service API
+2. ✅ Design TX blaster architecture
+3. ✅ Set up Go project with BSV SDK
+4. ✅ Implement private key handling for testnet/mainnet
+5. ✅ Create SQLite database for UTXO tracking
+6. ✅ Create CLI interface
+7. ✅ Refactor scan to use block headers and hash-based queries
+8. ✅ Test with testnet key to validate UTXO discovery
+9. ✅ Implement transaction builder for UTXO splitting
+10. ✅ Add database method to get oldest UTXO
+11. ✅ Create broadcaster module for teranode
+12. ✅ Add split command to CLI
+13. ✅ Add broadcast command to CLI
+14. ✅ Add blast command for continuous sending
+15. ✅ Update UTXO database after broadcasting transactions
+16. ✅ Add is_coinbase field to UTXO model
+17. ✅ Update database schema with is_coinbase column
+18. ✅ Update scanner to mark coinbase UTXOs
+19. ✅ Modify GetOldestUTXO to prioritize coinbase UTXOs
+20. ✅ Update split and blast commands to use coinbase UTXOs first
+21. ✅ Add coinbase maturity check (100 blocks)
+22. ✅ Implement periodic UTXO syncing during blast
+23. ✅ Optimize blast to create many transactions from single UTXO
+24. ✅ Add OP_RETURN output with 'Who is John Galt?' to all transactions
+25. ✅ Use direct batch gRPC API for submitting transactions
+26. ✅ Add iterations option to blaster for testing
+27. ✅ Add verify command to check UTXOs against teranode/aerospike
+28. ✅ Confirm UTXOs are not marked spent on broadcast failure
+29. ✅ Increase batch size from 100 to 1000 transactions
+30. ✅ Revert to chained transactions with proper batch submission
+
+### Pending Tasks
+- 🔄 Optimize periodic sync to scan from last coinbase height, not from 0
+  - Currently scans recent blocks only, could track last scanned height for efficiency

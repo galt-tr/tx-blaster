@@ -70,10 +70,7 @@ go build -o tx-blaster cmd/tx-blaster/main.go
 ./tx-blaster blast --key YOUR_WIF_KEY --outputs 10000
 
 # Test mode: Stop after sending a specific number of transactions
-./tx-blaster blast --key YOUR_WIF_KEY --iterations 10
-
-# Test with custom parameters
-./tx-blaster blast --key YOUR_WIF_KEY --iterations 100 --outputs 50
+./tx-blaster blast --key YOUR_WIF_KEY --iterations 100
 ```
 
 ## Configuration
@@ -102,13 +99,13 @@ The split command takes the oldest mature coinbase UTXO (100+ blocks old) and cr
 ### Blasting
 The blast command runs continuously and:
 - Prioritizes mature coinbase UTXOs over split outputs
-- Creates 100 transactions from each UTXO for maximum throughput
-- **Batch submission**: Sends up to 1024 transactions in a single API call when using propagation service
+- Creates 1000 chained transactions from each UTXO for maximum throughput
+- **Batch submission**: Sends up to 1000 chained transactions in a single batch
 - Periodically syncs new coinbase UTXOs every 5 minutes
 - Reports statistics every 30 seconds (TPS, success rate, etc.)
 - Ensures long-term sustainability by preserving funds
 
-When using the propagation service (default), transactions are submitted in batches for maximum efficiency. With `--iterations 100`, all 100 transactions are created and sent in a single batch API call, dramatically improving throughput.
+When using the propagation service (default), chained transactions are submitted as a complete batch to ensure proper ordering. The transactions are processed sequentially to maintain the chain dependency.
 
 ### Transaction Tracking
 All transactions include an OP_RETURN output with the message "Who is John Galt?" making them easily identifiable on the network.

@@ -1,2 +1,2 @@
-utxos.db
+*.db*
 tx-blaster

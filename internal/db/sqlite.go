@@ -277,6 +277,14 @@ func (d *Database) GetCurrentBlockHeight() (uint32, error) {
 	return uint32(height.Int64), nil
 }
 
+// DeleteUTXO removes a UTXO from the database
+func (d *Database) DeleteUTXO(txHash string, vout uint32) error {
+	_, err := d.db.Exec(`
+		DELETE FROM utxos WHERE tx_hash = ? AND vout = ?
+	`, txHash, vout)
+	return err
+}
+
 func (d *Database) Close() error {
 	return d.db.Close()
 }

@@ -81,56 +81,41 @@ func (pb *PropagationBroadcaster) BroadcastTransaction(txHex string) (string, er
 	return tx.TxID(), nil
 }
 
-// BroadcastTransactionBatch sends multiple transactions in a single batch
+// BroadcastTransactionBatch sends multiple transactions using the internal batcher
+// The actual batching is handled by the propagation client
 func (pb *PropagationBroadcaster) BroadcastTransactionBatch(txHexes []string) ([]string, []error, error) {
-	// Since the propagation client uses internal batching with channels,
-	// we'll send all transactions concurrently and let it batch them
 	ctx := context.Background()
 	txIDs := make([]string, len(txHexes))
 	errors := make([]error, len(txHexes))
 	
-	// Parse and send all transactions concurrently
-	type result struct {
-		index int
-		txID  string
-		err   error
-	}
-	
-	resultChan := make(chan result, len(txHexes))
-	
+	// Parse all transactions first
+	transactions := make([]*bt.Tx, len(txHexes))
 	for i, txHex := range txHexes {
-		go func(index int, txHexStr string) {
-			// Decode the transaction hex
-			txBytes, err := hex.DecodeString(txHexStr)
-			if err != nil {
-				resultChan <- result{index: index, err: fmt.Errorf("failed to decode transaction %d: %w", index, err)}
-				return
-			}
-			
-			// Parse the transaction
-			tx, err := bt.NewTxFromBytes(txBytes)
-			if err != nil {
-				resultChan <- result{index: index, err: fmt.Errorf("failed to parse transaction %d: %w", index, err)}
-				return
-			}
-			
-			// Process the transaction (will be batched internally by the client)
-			err = pb.client.ProcessTransaction(ctx, tx)
-			if err != nil {
-				resultChan <- result{index: index, err: err}
-			} else {
-				resultChan <- result{index: index, txID: tx.TxID()}
-			}
-		}(i, txHex)
+		txBytes, err := hex.DecodeString(txHex)
+		if err != nil {
+			errors[i] = fmt.Errorf("failed to decode transaction %d: %w", i, err)
+			continue
+		}
+		
+		tx, err := bt.NewTxFromBytes(txBytes)
+		if err != nil {
+			errors[i] = fmt.Errorf("failed to parse transaction %d: %w", i, err)
+			continue
+		}
+		
+		transactions[i] = tx
+		txIDs[i] = tx.TxID()
 	}
 	
-	// Collect all results
-	for i := 0; i < len(txHexes); i++ {
-		res := <-resultChan
-		if res.err != nil {
-			errors[res.index] = res.err
-		} else {
-			txIDs[res.index] = res.txID
+	// Submit all transactions to the propagation client
+	// They will be batched internally by the client
+	for i, tx := range transactions {
+		if tx == nil {
+			continue
+		}
+		err := pb.client.ProcessTransaction(ctx, tx)
+		if err != nil {
+			errors[i] = err
 		}
 	}
 	

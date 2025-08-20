@@ -87,7 +87,7 @@ func (b *Builder) BuildSimpleTransaction(utxo *models.UTXO) (*transaction.Transa
 	return tx, nil
 }
 
-// BuildManyTransactions creates many simple transactions from a single UTXO
+// BuildManyTransactions creates many simple chained transactions from a single UTXO
 // Each transaction spends the "change" from the previous one
 func (b *Builder) BuildManyTransactions(utxo *models.UTXO, count int) ([]*transaction.Transaction, error) {
 	if count <= 0 {

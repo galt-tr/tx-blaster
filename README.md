@@ -68,6 +68,12 @@ go build -o tx-blaster cmd/tx-blaster/main.go
 
 # Blast with custom number of outputs
 ./tx-blaster blast --key YOUR_WIF_KEY --outputs 10000
+
+# Test mode: Stop after sending a specific number of transactions
+./tx-blaster blast --key YOUR_WIF_KEY --iterations 10
+
+# Test with custom parameters
+./tx-blaster blast --key YOUR_WIF_KEY --iterations 100 --outputs 50
 ```
 
 ## Configuration
@@ -88,8 +94,24 @@ For scanning blocks and finding UTXOs:
 UTXOs are stored in a local SQLite database:
 - Default path: `utxos.db` (configurable with `--database`)
 
-## Transaction Splitting
+## Transaction Features
 
-The split command takes the oldest unspent UTXO and creates a transaction with many outputs (default 1,000). Each output contains an equal share of the input amount minus a minimal mining fee (1 satoshi per byte, minimum 1 satoshi total). All outputs are sent back to the same address. This creates transactions ideal for stress testing with maximum efficiency.
+### Splitting
+The split command takes the oldest mature coinbase UTXO (100+ blocks old) and creates a transaction with many outputs (default 1,000). Each output contains an equal share of the input amount minus a minimal mining fee. All outputs are sent back to the same address.
 
-After broadcasting a split transaction, all new UTXOs are automatically saved to the database for use in subsequent blasting operations.
+### Blasting
+The blast command runs continuously and:
+- Prioritizes mature coinbase UTXOs over split outputs
+- Creates 100 transactions from each UTXO for maximum throughput
+- **Batch submission**: Sends up to 1024 transactions in a single API call when using propagation service
+- Periodically syncs new coinbase UTXOs every 5 minutes
+- Reports statistics every 30 seconds (TPS, success rate, etc.)
+- Ensures long-term sustainability by preserving funds
+
+When using the propagation service (default), transactions are submitted in batches for maximum efficiency. With `--iterations 100`, all 100 transactions are created and sent in a single batch API call, dramatically improving throughput.
+
+### Transaction Tracking
+All transactions include an OP_RETURN output with the message "Who is John Galt?" making them easily identifiable on the network.
+
+### Coinbase Maturity
+The system automatically enforces the 100-block maturity requirement for coinbase UTXOs, ensuring transactions are valid.

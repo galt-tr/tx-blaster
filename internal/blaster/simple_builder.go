@@ -1,36 +1,13 @@
 package blaster
 
 import (
-	"encoding/hex"
 	"fmt"
 
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/bsv-blockchain/go-sdk/transaction/template/p2pkh"
-	"github.com/tx-blaster/tx-blaster/internal/keys"
 	"github.com/tx-blaster/tx-blaster/pkg/models"
 )
-
-// createOpReturnScript creates an OP_RETURN script with the given data
-func createOpReturnScript(data string) (*script.Script, error) {
-	// Create a new script starting with OP_RETURN (0x6a)
-	s := &script.Script{}
-	
-	// Add OP_RETURN opcode
-	*s = append(*s, 0x6a) // OP_RETURN
-	
-	// Add data push
-	dataBytes := []byte(data)
-	if len(dataBytes) <= 75 {
-		// For data up to 75 bytes, use direct push
-		*s = append(*s, byte(len(dataBytes)))
-		*s = append(*s, dataBytes...)
-	} else {
-		return nil, fmt.Errorf("data too long for OP_RETURN: %d bytes", len(dataBytes))
-	}
-	
-	return s, nil
-}
 
 // BuildSimpleTransaction creates a transaction that sends most of the input to one output
 // and only 1 satoshi to another output (for maximum transaction generation)
@@ -135,9 +112,8 @@ func (b *Builder) BuildManyTransactions(utxo *models.UTXO, count int) ([]*transa
 		
 		// Create a "virtual" UTXO from the first output for the next iteration
 		if i < count-1 {
-			txID := tx.TxID()
 			currentUTXO = &models.UTXO{
-				TxHash:      txID,
+				TxHash:      tx.TxID().String(),
 				Vout:        0, // First output has most of the value
 				Amount:      tx.Outputs[0].Satoshis,
 				BlockHeight: currentUTXO.BlockHeight,

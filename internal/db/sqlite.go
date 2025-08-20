@@ -29,6 +29,7 @@ func NewDatabase(dbPath string) (*Database, error) {
 }
 
 func (d *Database) createTables() error {
+	// Create table if it doesn't exist
 	query := `
 	CREATE TABLE IF NOT EXISTS utxos (
 		tx_hash TEXT NOT NULL,
@@ -42,16 +43,29 @@ func (d *Database) createTables() error {
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		PRIMARY KEY (tx_hash, vout)
 	);
-
-	CREATE INDEX IF NOT EXISTS idx_utxos_address ON utxos(address);
-	CREATE INDEX IF NOT EXISTS idx_utxos_spent ON utxos(spent);
-	CREATE INDEX IF NOT EXISTS idx_utxos_block_height ON utxos(block_height);
-	CREATE INDEX IF NOT EXISTS idx_utxos_coinbase ON utxos(is_coinbase);
 	`
 
 	_, err := d.db.Exec(query)
 	if err != nil {
 		return fmt.Errorf("failed to create tables: %w", err)
+	}
+
+	// Add is_coinbase column if it doesn't exist (for existing databases)
+	_, err = d.db.Exec(`ALTER TABLE utxos ADD COLUMN is_coinbase BOOLEAN DEFAULT FALSE`)
+	// Ignore error if column already exists
+	
+	// Create indexes
+	indexes := []string{
+		`CREATE INDEX IF NOT EXISTS idx_utxos_address ON utxos(address)`,
+		`CREATE INDEX IF NOT EXISTS idx_utxos_spent ON utxos(spent)`,
+		`CREATE INDEX IF NOT EXISTS idx_utxos_block_height ON utxos(block_height)`,
+		`CREATE INDEX IF NOT EXISTS idx_utxos_coinbase ON utxos(is_coinbase)`,
+	}
+	
+	for _, idx := range indexes {
+		if _, err := d.db.Exec(idx); err != nil {
+			return fmt.Errorf("failed to create index: %w", err)
+		}
 	}
 
 	return nil

@@ -37,6 +37,27 @@ func NewBuilder(keyManager *keys.KeyManager) *Builder {
 	}
 }
 
+// createOpReturnScript creates an OP_RETURN script with the given data
+func createOpReturnScript(data string) (*script.Script, error) {
+	// Create a new script starting with OP_RETURN (0x6a)
+	s := &script.Script{}
+	
+	// Add OP_RETURN opcode
+	*s = append(*s, 0x6a) // OP_RETURN
+	
+	// Add data push
+	dataBytes := []byte(data)
+	if len(dataBytes) <= 75 {
+		// For data up to 75 bytes, use direct push
+		*s = append(*s, byte(len(dataBytes)))
+		*s = append(*s, dataBytes...)
+	} else {
+		return nil, fmt.Errorf("data too long for OP_RETURN: %d bytes", len(dataBytes))
+	}
+	
+	return s, nil
+}
+
 // BuildSplitTransaction creates a transaction that splits a single UTXO into many outputs
 func (b *Builder) BuildSplitTransaction(utxo *models.UTXO, numOutputs int) (*transaction.Transaction, error) {
 	// Validate inputs

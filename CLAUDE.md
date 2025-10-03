@@ -23,7 +23,7 @@ go test ./...
 
 # Common development workflow
 ./tx-blaster scan --key YOUR_WIF_KEY        # Scan for UTXOs
-./tx-blaster list --key YOUR_WIF_KEY        # List found UTXOs  
+./tx-blaster list --key YOUR_WIF_KEY        # List found UTXOs
 ./tx-blaster blast --key YOUR_WIF_KEY       # Start blasting transactions
 ./tx-blaster verify --key YOUR_WIF_KEY      # Verify UTXO states against teranode
 
@@ -33,6 +33,13 @@ go test ./...
 
 # Start blasting from a specific UTXO
 ./tx-blaster blast --key YOUR_WIF_KEY --from-tx TRANSACTION_HASH --vout OUTPUT_INDEX
+
+# Blast at a fixed rate from a large UTXO (splits into many outputs first)
+./tx-blaster blast-from-tx --key YOUR_WIF_KEY --tx TRANSACTION_HASH --vout 0 --rate 100 --outputs 10000
+# This command:
+# 1. Takes the specified UTXO (usually 50 BSV coinbase)
+# 2. Splits it into many outputs (default 500000, but limited by tx size to ~3000)
+# 3. Continuously creates zero-fee chained transactions at the specified rate
 ```
 
 ## Architecture

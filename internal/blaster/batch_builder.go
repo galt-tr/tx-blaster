@@ -84,6 +84,17 @@ func (b *Builder) BuildOptimizedSplitTransaction(utxo *models.UTXO, targetOutput
 		return nil, fmt.Errorf("failed to add input: %w", err)
 	}
 
+	// FIRST: Add OP_RETURN output with "Who is John Galt?" message (index 0)
+	opReturnScript, err := createOpReturnScript("Who is John Galt?")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create OP_RETURN script: %w", err)
+	}
+	
+	tx.AddOutput(&transaction.TransactionOutput{
+		Satoshis:      0, // OP_RETURN outputs have 0 value
+		LockingScript: opReturnScript,
+	})
+
 	// Get address for outputs
 	address := b.keyManager.GetAddress()
 	addr, err := script.NewAddressFromString(address)
@@ -97,7 +108,7 @@ func (b *Builder) BuildOptimizedSplitTransaction(utxo *models.UTXO, targetOutput
 		return nil, fmt.Errorf("failed to create locking script: %w", err)
 	}
 
-	// Add outputs
+	// Add value outputs starting from index 1
 	for i := 0; i < targetOutputs; i++ {
 		output := &transaction.TransactionOutput{
 			Satoshis:      amountPerOutput,
@@ -105,17 +116,6 @@ func (b *Builder) BuildOptimizedSplitTransaction(utxo *models.UTXO, targetOutput
 		}
 		tx.AddOutput(output)
 	}
-	
-	// Add OP_RETURN output with "Who is John Galt?" message
-	opReturnScript, err := createOpReturnScript("Who is John Galt?")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create OP_RETURN script: %w", err)
-	}
-	
-	tx.AddOutput(&transaction.TransactionOutput{
-		Satoshis:      0, // OP_RETURN outputs have 0 value
-		LockingScript: opReturnScript,
-	})
 
 	// Sign the transaction
 	err = tx.Sign()

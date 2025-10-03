@@ -1,7 +1,6 @@
 package scanner
 
 import (
-	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"log"
@@ -30,78 +29,57 @@ func NewScanner(client *teranode.Client, database *db.Database, keyManager *keys
 
 func (s *Scanner) ScanAllBlocks() error {
 	log.Printf("Scanning ALL blocks from genesis for UTXOs belonging to address: %s", s.keyManager.GetAddress())
-	
+
 	// Get best block header to determine current height
 	bestHeader, err := s.client.GetBestBlockHeader()
 	if err != nil {
 		return fmt.Errorf("failed to get best block header: %w", err)
 	}
-	
+
 	log.Printf("Current blockchain height: %d", bestHeader.Height)
-	log.Printf("Will scan from height 0 to %d", bestHeader.Height)
-	
+	log.Printf("Will scan from height 1 to %d (skipping genesis)", bestHeader.Height)
+
 	foundUTXOs := 0
-	
-	// Scan from genesis (height 0) to current height
-	for height := uint32(0); height <= bestHeader.Height; height++ {
+	skippedBlocks := 0
+	processedBlocks := 0
+
+	// Scan from height 1 (skip genesis) to current height
+	for height := uint32(1); height <= bestHeader.Height; height++ {
 		if height%100 == 0 {
-			log.Printf("Progress: Scanning block at height %d (%.1f%%)", 
-				height, float64(height)/float64(bestHeader.Height)*100)
+			log.Printf("Progress: Scanning block at height %d (%.1f%%) - Found %d UTXOs, Processed %d blocks, Skipped %d",
+				height, float64(height)/float64(bestHeader.Height)*100, foundUTXOs, processedBlocks, skippedBlocks)
 		}
-		
-		// Get block header for this specific height
-		_, headerHex, err := s.client.GetBlockHeaderByHeight(height)
+
+		// Get full block data directly by height
+		block, err := s.client.GetBlockByHeight(height)
 		if err != nil {
-			log.Printf("Failed to get block header at height %d: %v", height, err)
+			// Block might be missing or orphaned, skip it
+			if height%100 != 0 { // Only log non-progress heights
+				log.Printf("Could not get block at height %d (likely missing or orphaned): %v", height, err)
+			}
+			skippedBlocks++
 			continue
 		}
-		
-		var blockHash string
-		
-		// Check if we got a hash directly or need to calculate it
-		if len(headerHex) == 64 {
-			// It's already a hash
-			blockHash = headerHex
-		} else {
-			// It's header bytes, calculate hash
-			blockHeaderBytes, err := hex.DecodeString(headerHex)
-			if err != nil {
-				log.Printf("Failed to decode block header at height %d: %v", height, err)
-				continue
-			}
-			
-			if len(blockHeaderBytes) != 80 {
-				log.Printf("Warning: Block header at height %d has unexpected length: %d bytes (expected 80)", 
-					height, len(blockHeaderBytes))
-			}
-			
-			blockHash = s.calculateBlockHash(blockHeaderBytes)
-		}
-		
-		// Get full block data by hash
-		block, err := s.client.GetBlockByHash(blockHash)
-		if err != nil {
-			log.Printf("Failed to get block by hash %s at height %d: %v", blockHash, height, err)
-			continue
-		}
-		
-		// Set the height if not set
-		if block.Height == 0 {
-			block.Height = height
-		}
-		
+
+		processedBlocks++
+
 		// Process coinbase transaction
 		if block.CoinbaseTx != nil {
-			count, err := s.processCoinbaseTransaction(block.CoinbaseTx, block.Height)
+			count, err := s.processCoinbaseTransaction(block.CoinbaseTx, height)
 			if err != nil {
 				log.Printf("Failed to process coinbase tx at height %d: %v", height, err)
-			} else {
+			} else if count > 0 {
 				foundUTXOs += count
+				log.Printf("✓ Found %d UTXO(s) at height %d", count, height)
 			}
 		}
 	}
-	
-	log.Printf("Scan complete. Found %d UTXOs", foundUTXOs)
+
+	log.Printf("\n=== Scan Complete ===")
+	log.Printf("Total blocks processed: %d", processedBlocks)
+	log.Printf("Blocks skipped (missing/orphaned): %d", skippedBlocks)
+	log.Printf("Total UTXOs found: %d", foundUTXOs)
+
 	return nil
 }
 
@@ -124,20 +102,6 @@ func (s *Scanner) ScanRecentBlocks(numBlocks int) error {
 	}
 	
 	return s.ScanBlockRange(endHeight, startHeight)
-}
-
-func (s *Scanner) calculateBlockHash(headerBytes []byte) string {
-	// Bitcoin block hash is double SHA256 of the header
-	firstHash := sha256.Sum256(headerBytes)
-	secondHash := sha256.Sum256(firstHash[:])
-	
-	// Reverse the byte order for display (Bitcoin uses little-endian)
-	reversed := make([]byte, len(secondHash))
-	for i := 0; i < len(secondHash); i++ {
-		reversed[i] = secondHash[len(secondHash)-1-i]
-	}
-	
-	return hex.EncodeToString(reversed)
 }
 
 func (s *Scanner) ScanBlockRange(startHeight, endHeight uint32) error {
@@ -192,21 +156,11 @@ func (s *Scanner) ScanBlockRange(startHeight, endHeight uint32) error {
 			}
 			
 			log.Printf("Scanning block at height %d", blockInfo.Height)
-			
-			// Parse block header to get hash
-			blockHeaderBytes, err := hex.DecodeString(blockInfo.BlockHeader)
+
+			// Get full block data directly by height
+			block, err := s.client.GetBlockByHeight(blockInfo.Height)
 			if err != nil {
-				log.Printf("Failed to decode block header at height %d: %v", blockInfo.Height, err)
-				continue
-			}
-			
-			// Calculate block hash from header
-			blockHash := s.calculateBlockHash(blockHeaderBytes)
-			
-			// Get full block data by hash
-			block, err := s.client.GetBlockByHash(blockHash)
-			if err != nil {
-				log.Printf("Failed to get block by hash %s at height %d: %v", blockHash, blockInfo.Height, err)
+				log.Printf("Could not find valid block at height %d, skipping: %v", blockInfo.Height, err)
 				continue
 			}
 			
@@ -344,6 +298,7 @@ func (s *Scanner) processCoinbaseTransaction(tx *teranode.Transaction, blockHeig
 	
 	return foundCount, nil
 }
+
 
 func (s *Scanner) GetUTXOSummary() error {
 	address := s.keyManager.GetAddress()

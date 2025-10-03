@@ -71,7 +71,45 @@ func (d *Database) createTables() error {
 	return nil
 }
 
+// ValidateUTXO performs basic validation on a UTXO before saving
+func (d *Database) ValidateUTXO(utxo *models.UTXO) error {
+	// Check transaction hash is valid (64 hex characters)
+	if len(utxo.TxHash) != 64 {
+		return fmt.Errorf("invalid transaction hash length: %d (expected 64)", len(utxo.TxHash))
+	}
+
+	// Check amount is reasonable (not zero unless it's OP_RETURN at vout 0)
+	if utxo.Amount == 0 && utxo.Vout != 0 {
+		return fmt.Errorf("invalid amount: 0 satoshis for non-OP_RETURN output")
+	}
+
+	// Check amount is not suspiciously large (more than 21 million BSV)
+	maxSatoshis := uint64(21000000) * uint64(100000000) // 21 million BSV in satoshis
+	if utxo.Amount > maxSatoshis {
+		return fmt.Errorf("invalid amount: %d satoshis exceeds maximum supply", utxo.Amount)
+	}
+
+	// Check block height is reasonable (not in far future)
+	currentHeight, err := d.GetCurrentBlockHeight()
+	if err == nil && utxo.BlockHeight > currentHeight+10000 {
+		return fmt.Errorf("invalid block height: %d is too far in the future (current: %d)",
+			utxo.BlockHeight, currentHeight)
+	}
+
+	// Check address is not empty
+	if utxo.Address == "" {
+		return fmt.Errorf("invalid UTXO: address cannot be empty")
+	}
+
+	return nil
+}
+
 func (d *Database) SaveUTXO(utxo *models.UTXO) error {
+	// Validate UTXO before saving
+	if err := d.ValidateUTXO(utxo); err != nil {
+		return fmt.Errorf("UTXO validation failed: %w", err)
+	}
+
 	query := `
 	INSERT OR REPLACE INTO utxos (tx_hash, vout, amount, block_height, address, spent, is_coinbase, created_at, updated_at)
 	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -83,7 +121,7 @@ func (d *Database) SaveUTXO(utxo *models.UTXO) error {
 		utxo.CreatedAt = now
 	}
 
-	_, err := d.db.Exec(query, utxo.TxHash, utxo.Vout, utxo.Amount, utxo.BlockHeight, 
+	_, err := d.db.Exec(query, utxo.TxHash, utxo.Vout, utxo.Amount, utxo.BlockHeight,
 		utxo.Address, utxo.Spent, utxo.IsCoinbase, utxo.CreatedAt, utxo.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("failed to save UTXO: %w", err)
@@ -164,56 +202,105 @@ func (d *Database) GetOldestUTXO(address string) (*models.UTXO, error) {
 	return d.GetOldestMatureUTXO(address, 0)
 }
 
-// GetOldestMatureUTXO gets the oldest UTXO that is mature enough to spend
-// For coinbase UTXOs, they must be at least 100 blocks old
-func (d *Database) GetOldestMatureUTXO(address string, currentBlockHeight uint32) (*models.UTXO, error) {
-	// First try to get oldest mature coinbase UTXO (100+ blocks old)
+// GetUTXOByTxHashAndVout retrieves a specific UTXO by transaction hash and output index
+func (d *Database) GetUTXOByTxHashAndVout(txHash string, vout uint32) (*models.UTXO, error) {
 	query := `
 	SELECT tx_hash, vout, amount, block_height, address, spent, is_coinbase, created_at, updated_at
 	FROM utxos
-	WHERE address = ? AND spent = FALSE AND is_coinbase = TRUE
-	AND block_height <= ?
-	ORDER BY block_height ASC, vout ASC
+	WHERE tx_hash = ? AND vout = ?
 	LIMIT 1
 	`
 	
-	// Calculate mature height (current - 100 for coinbase maturity)
-	matureHeight := int64(currentBlockHeight) - 100
-	if matureHeight < 0 {
-		matureHeight = 0
-	}
-
 	utxo := &models.UTXO{}
-	err := d.db.QueryRow(query, address, matureHeight).Scan(
+	err := d.db.QueryRow(query, txHash, vout).Scan(
 		&utxo.TxHash, &utxo.Vout, &utxo.Amount, &utxo.BlockHeight,
 		&utxo.Address, &utxo.Spent, &utxo.IsCoinbase, &utxo.CreatedAt, &utxo.UpdatedAt,
 	)
 	
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("UTXO not found for tx %s:%d", txHash, vout)
+	}
+	
+	if err != nil {
+		return nil, err
+	}
+	
+	return utxo, nil
+}
+
+// GetOldestMatureUTXO gets the oldest UTXO that is mature enough to spend
+// Prioritizes split/regular UTXOs over coinbase UTXOs
+// For coinbase UTXOs, they must be at least 100 blocks old
+func (d *Database) GetOldestMatureUTXO(address string, currentBlockHeight uint32) (*models.UTXO, error) {
+	// First priority: Try to get split/regular UTXOs (non-coinbase)
+	// Only use UTXOs with reasonable block heights (< 100000) to avoid invalid entries
+	query := `
+	SELECT tx_hash, vout, amount, block_height, address, spent, is_coinbase, created_at, updated_at
+	FROM utxos
+	WHERE address = ? AND spent = FALSE AND is_coinbase = FALSE AND block_height < 100000
+	ORDER BY amount DESC, block_height ASC, vout ASC
+	LIMIT 1
+	`
+
+	utxo := &models.UTXO{}
+	err := d.db.QueryRow(query, address).Scan(
+		&utxo.TxHash, &utxo.Vout, &utxo.Amount, &utxo.BlockHeight,
+		&utxo.Address, &utxo.Spent, &utxo.IsCoinbase, &utxo.CreatedAt, &utxo.UpdatedAt,
+	)
+
+	if err == nil {
+		// Found a split/regular UTXO, use it
+		return utxo, nil
+	}
+
+	if err != sql.ErrNoRows {
+		return nil, fmt.Errorf("failed to get split UTXO: %w", err)
+	}
+
+	// Second priority: Try to get oldest mature coinbase UTXO (must be 100+ blocks old)
+	// A coinbase UTXO is mature if: currentHeight >= utxo.blockHeight + 100
+	query = `
+	SELECT tx_hash, vout, amount, block_height, address, spent, is_coinbase, created_at, updated_at
+	FROM utxos
+	WHERE address = ? AND spent = FALSE AND is_coinbase = TRUE
+	AND block_height + 100 <= ?
+	ORDER BY block_height ASC, vout ASC
+	LIMIT 1
+	`
+
+	err = d.db.QueryRow(query, address, currentBlockHeight).Scan(
+		&utxo.TxHash, &utxo.Vout, &utxo.Amount, &utxo.BlockHeight,
+		&utxo.Address, &utxo.Spent, &utxo.IsCoinbase, &utxo.CreatedAt, &utxo.UpdatedAt,
+	)
+
+	if err == nil {
+		// Found a mature coinbase UTXO
+		return utxo, nil
+	}
+
+	if err != sql.ErrNoRows {
+		return nil, fmt.Errorf("failed to get mature coinbase UTXO: %w", err)
+	}
+
+	// Last resort: Try any UTXO including immature coinbase
+	query = `
+	SELECT tx_hash, vout, amount, block_height, address, spent, is_coinbase, created_at, updated_at
+	FROM utxos
+	WHERE address = ? AND spent = FALSE
+	ORDER BY is_coinbase ASC, block_height ASC, vout ASC
+	LIMIT 1
+	`
+
+	err = d.db.QueryRow(query, address).Scan(
+		&utxo.TxHash, &utxo.Vout, &utxo.Amount, &utxo.BlockHeight,
+		&utxo.Address, &utxo.Spent, &utxo.IsCoinbase, &utxo.CreatedAt, &utxo.UpdatedAt,
+	)
+
 	if err != nil {
 		if err == sql.ErrNoRows {
-			// No coinbase UTXOs found, try any UTXO
-			query = `
-			SELECT tx_hash, vout, amount, block_height, address, spent, is_coinbase, created_at, updated_at
-			FROM utxos
-			WHERE address = ? AND spent = FALSE
-			ORDER BY block_height ASC, vout ASC
-			LIMIT 1
-			`
-			
-			err = d.db.QueryRow(query, address).Scan(
-				&utxo.TxHash, &utxo.Vout, &utxo.Amount, &utxo.BlockHeight,
-				&utxo.Address, &utxo.Spent, &utxo.IsCoinbase, &utxo.CreatedAt, &utxo.UpdatedAt,
-			)
-			
-			if err != nil {
-				if err == sql.ErrNoRows {
-					return nil, fmt.Errorf("no unspent UTXOs found for address %s", address)
-				}
-				return nil, fmt.Errorf("failed to get oldest UTXO: %w", err)
-			}
-		} else {
-			return nil, fmt.Errorf("failed to get oldest UTXO: %w", err)
+			return nil, fmt.Errorf("no unspent UTXOs found for address %s", address)
 		}
+		return nil, fmt.Errorf("failed to get any UTXO: %w", err)
 	}
 
 	return utxo, nil
@@ -275,6 +362,67 @@ func (d *Database) GetCurrentBlockHeight() (uint32, error) {
 	}
 	
 	return uint32(height.Int64), nil
+}
+
+// GetSmallUTXOs returns all unspent UTXOs below a threshold amount
+func (d *Database) GetSmallUTXOs(address string, threshold uint64, limit int) ([]*models.UTXO, error) {
+	query := `
+	SELECT tx_hash, vout, amount, block_height, address, spent, is_coinbase, created_at, updated_at
+	FROM utxos
+	WHERE address = ? AND spent = FALSE AND amount < ?
+	ORDER BY amount ASC
+	LIMIT ?
+	`
+	
+	rows, err := d.db.Query(query, address, threshold, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get small UTXOs: %w", err)
+	}
+	defer rows.Close()
+	
+	var utxos []*models.UTXO
+	for rows.Next() {
+		utxo := &models.UTXO{}
+		err := rows.Scan(
+			&utxo.TxHash, &utxo.Vout, &utxo.Amount, &utxo.BlockHeight,
+			&utxo.Address, &utxo.Spent, &utxo.IsCoinbase, &utxo.CreatedAt, &utxo.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan UTXO: %w", err)
+		}
+		utxos = append(utxos, utxo)
+	}
+	
+	return utxos, nil
+}
+
+// GetAllUnspentUTXOs returns all unspent UTXOs for a given address
+func (d *Database) GetAllUnspentUTXOs(address string) ([]*models.UTXO, error) {
+	rows, err := d.db.Query(`
+		SELECT tx_hash, vout, amount, block_height, address, spent, is_coinbase, created_at, updated_at
+		FROM utxos
+		WHERE address = ? AND spent = 0
+		ORDER BY block_height ASC, tx_hash ASC, vout ASC
+	`, address)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query unspent UTXOs: %w", err)
+	}
+	defer rows.Close()
+	
+	var utxos []*models.UTXO
+	for rows.Next() {
+		utxo := &models.UTXO{}
+		err := rows.Scan(
+			&utxo.TxHash, &utxo.Vout, &utxo.Amount, &utxo.BlockHeight,
+			&utxo.Address, &utxo.Spent, &utxo.IsCoinbase, &utxo.CreatedAt, &utxo.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan UTXO: %w", err)
+		}
+		utxos = append(utxos, utxo)
+	}
+	
+	return utxos, nil
 }
 
 // DeleteUTXO removes a UTXO from the database

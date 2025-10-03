@@ -25,6 +25,14 @@ go test ./...
 ./tx-blaster scan --key YOUR_WIF_KEY        # Scan for UTXOs
 ./tx-blaster list --key YOUR_WIF_KEY        # List found UTXOs  
 ./tx-blaster blast --key YOUR_WIF_KEY       # Start blasting transactions
+./tx-blaster verify --key YOUR_WIF_KEY      # Verify UTXO states against teranode
+
+# Check status of a specific transaction
+./tx-blaster tx-status --txid TRANSACTION_HASH                     # Without key (no ownership check)
+./tx-blaster tx-status --txid TRANSACTION_HASH --key YOUR_WIF_KEY  # With key (checks ownership and local DB)
+
+# Start blasting from a specific UTXO
+./tx-blaster blast --key YOUR_WIF_KEY --from-tx TRANSACTION_HASH --vout OUTPUT_INDEX
 ```
 
 ## Architecture
@@ -44,6 +52,7 @@ All 1000 chained transactions are submitted in a single batch gRPC call for effi
 - `main.go` - CLI entry point using Cobra
 - `blast.go` - BlastManager orchestrates continuous transaction creation/broadcasting
 - `verify.go` - Verifies UTXOs against teranode/aerospike
+- `tx-status.go` - Checks transaction output status and detects inconsistencies
 
 **Transaction Building** (`internal/blaster/`)
 - `simple_builder.go` - Creates chained transactions (`BuildManyTransactions`)
@@ -74,10 +83,13 @@ Key teranode services used:
 
 ### Transaction Features
 
-1. **OP_RETURN Tracking**: All transactions include `OP_RETURN "Who is John Galt?"` for identification
+1. **OP_RETURN Tracking**: All transactions include `OP_RETURN "Who is John Galt?"` as the **FIRST OUTPUT (index 0)**
+   - This is critical for transaction identification
+   - Value outputs start at index 1
+   - Chained transactions reference output index 1 for the next UTXO
 2. **Coinbase Maturity**: Enforces 100-block maturity for coinbase UTXOs
 3. **Batch Submission**: Sends up to 1000 transactions in one gRPC call
-4. **Chain Preservation**: Last transaction output saved as new UTXO for next batch
+4. **Chain Preservation**: Last transaction's output at index 1 saved as new UTXO for next batch
 
 ## Important Configuration
 
@@ -104,6 +116,42 @@ The `DirectBatchBroadcaster` in `batch_propagation.go` directly calls the gRPC `
 - Batch failures don't mark UTXOs as spent
 - Individual transaction errors tracked separately in batch response
 
+### UTXO Verification
+The `verify` command provides comprehensive UTXO state verification:
+- Uses `/api/v1/utxos/:txid/json` to get transaction outputs and check spent status
+- Verifies ownership by checking locking scripts
+- Identifies missing parent transactions that prevent UTXO spending
+- Supports rebroadcasting missing transactions from local txstore
+- Automatically fixes database inconsistencies
+
+### Transaction Status Checking
+The `tx-status` command provides detailed transaction output analysis:
+- Queries transaction by ID and checks all outputs
+- Shows spent/unspent status for each output
+- Identifies spending transactions for spent outputs
+- Compares aerospike data with local database (when key provided)
+- Reports inconsistencies between data sources
+- Supports operation without private key for general queries
+
+## Statistics and Monitoring
+
+The blaster provides comprehensive real-time statistics:
+
+### Batch Processing Stats
+- Per-batch TPS calculation during submission
+- Real-time progress counter showing successes, duplicates, and failures
+- Batch results summary with success rate and timing
+
+### Periodic Statistics Report (every 30 seconds)
+- Overall TPS and transactions per minute
+- Interval TPS (last 30 seconds performance)
+- Success rate percentage
+- Formatted in a clear box layout for easy reading
+
+### Final Summary
+- Detailed iteration limit report with all metrics
+- Total runtime and average performance
+
 ## Common Issues and Solutions
 
 1. **TX_MISSING_PARENT**: Transactions have dependencies not yet in mempool
@@ -116,7 +164,12 @@ The `DirectBatchBroadcaster` in `batch_propagation.go` directly calls the gRPC `
    - Solution: Migration code suppresses "column already exists" errors
 
 4. **BLOB_EXISTS errors**: Transaction already exists in mempool/blockchain
-   - Solution: Treat as success (see blast.go lines 224-230)
+   - Solution: Treat as success (see blast.go lines 251-257)
+
+5. **Transaction validation failures**: When transactions fail validation (TX_INVALID, ScriptVerifierGoBDK fail, etc.)
+   - The blast command will automatically dump the raw transaction hex for debugging
+   - This helps identify malformed transactions or missing parent issues
+   - Use `--debug` flag for additional verbose output on all errors
 
 ## Development History and TODOs
 

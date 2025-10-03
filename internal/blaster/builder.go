@@ -99,6 +99,17 @@ func (b *Builder) BuildSplitTransaction(utxo *models.UTXO, numOutputs int) (*tra
 		return nil, fmt.Errorf("failed to add input: %w", err)
 	}
 
+	// FIRST: Add OP_RETURN output with "Who is John Galt?" message (index 0)
+	opReturnScript, err := createOpReturnScript("Who is John Galt?")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create OP_RETURN script: %w", err)
+	}
+	
+	tx.AddOutput(&transaction.TransactionOutput{
+		Satoshis:      0, // OP_RETURN outputs have 0 value
+		LockingScript: opReturnScript,
+	})
+
 	// Get address for outputs
 	address := b.keyManager.GetAddress()
 	addr, err := script.NewAddressFromString(address)
@@ -112,7 +123,7 @@ func (b *Builder) BuildSplitTransaction(utxo *models.UTXO, numOutputs int) (*tra
 		return nil, fmt.Errorf("failed to create locking script: %w", err)
 	}
 
-	// Add outputs
+	// Add value outputs starting from index 1
 	for i := 0; i < numOutputs; i++ {
 		output := &transaction.TransactionOutput{
 			Satoshis:      amountPerOutput,
@@ -120,17 +131,6 @@ func (b *Builder) BuildSplitTransaction(utxo *models.UTXO, numOutputs int) (*tra
 		}
 		tx.AddOutput(output)
 	}
-	
-	// Add OP_RETURN output with "Who is John Galt?" message
-	opReturnScript, err := createOpReturnScript("Who is John Galt?")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create OP_RETURN script: %w", err)
-	}
-	
-	tx.AddOutput(&transaction.TransactionOutput{
-		Satoshis:      0, // OP_RETURN outputs have 0 value
-		LockingScript: opReturnScript,
-	})
 
 	// Sign the transaction
 	err = tx.Sign()
@@ -156,13 +156,13 @@ func (b *Builder) addInputFromUTXO(tx *transaction.Transaction, utxo *models.UTX
 	} else if len(txHash) < 64 {
 		return fmt.Errorf("invalid transaction hash length: got %d, expected 64 for hash %s", len(txHash), txHash)
 	}
-	
+
 	// Parse transaction ID
 	txID, err := hex.DecodeString(txHash)
 	if err != nil {
 		return fmt.Errorf("failed to decode tx hash: %w", err)
 	}
-	
+
 	// Reverse byte order (Bitcoin uses little-endian)
 	for i, j := 0, len(txID)-1; i < j; i, j = i+1, j-1 {
 		txID[i], txID[j] = txID[j], txID[i]
@@ -170,26 +170,38 @@ func (b *Builder) addInputFromUTXO(tx *transaction.Transaction, utxo *models.UTX
 
 	// Get private key for signing
 	privKey := b.keyManager.GetPrivateKey()
-	
-	// Create unlocking script template
-	unlockingTemplate, err := p2pkh.Unlock(privKey, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create unlocking template: %w", err)
-	}
 
-	// Create P2PKH locking script for the input
+	// Debug: Log private key details
+	// Skip for now as method names are unclear
+
+	// Try to get the actual locking script from the UTXO if available
+	var prevLockingScript *script.Script
+
+	// If we have the locking script stored (future enhancement), use it
+	// Otherwise, create a standard P2PKH locking script based on our address
 	address := b.keyManager.GetAddress()
 	addr, err := script.NewAddressFromString(address)
 	if err != nil {
 		return fmt.Errorf("failed to parse address: %w", err)
 	}
-	
-	prevLockingScript, err := p2pkh.Lock(addr)
+
+	prevLockingScript, err = p2pkh.Lock(addr)
 	if err != nil {
 		return fmt.Errorf("failed to create locking script: %w", err)
 	}
 
-	// Add input to transaction (use the padded hash)
+	// For debugging: log the locking script we're using
+	log.Printf("Using locking script for UTXO %s:%d - %s", txHash[:8], utxo.Vout, hex.EncodeToString(*prevLockingScript))
+	log.Printf("Debug: Address from key manager: %s", address)
+	log.Printf("Debug: Public key hash: %s", hex.EncodeToString(addr.PublicKeyHash))
+
+	// Create unlocking template with the private key
+	unlockingTemplate, err := p2pkh.Unlock(privKey, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create unlocking template: %w", err)
+	}
+
+	// Add input to transaction
 	err = tx.AddInputFrom(
 		txHash,
 		utxo.Vout,
@@ -200,10 +212,6 @@ func (b *Builder) addInputFromUTXO(tx *transaction.Transaction, utxo *models.UTX
 	if err != nil {
 		return fmt.Errorf("failed to add input: %w", err)
 	}
-	
-	// Debug: Log what we're adding
-	fmt.Printf("AddInputFrom: txHash=%s, vout=%d, amount=%d, script=%s\n",
-		txHash, utxo.Vout, utxo.Amount, hex.EncodeToString(*prevLockingScript)[:40])
 
 	return nil
 }

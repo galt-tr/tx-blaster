@@ -75,13 +75,24 @@ func (b *Builder) BuildSplitForParallelBlast(utxo *models.UTXO, numOutputs int) 
 		return nil, fmt.Errorf("failed to parse address: %w", err)
 	}
 
+	// FIRST: Add OP_RETURN output with "Who is John Galt?" message (index 0)
+	opReturnScript, err := createOpReturnScript("Who is John Galt?")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create OP_RETURN script: %w", err)
+	}
+
+	tx.AddOutput(&transaction.TransactionOutput{
+		Satoshis:      0, // OP_RETURN outputs have 0 value
+		LockingScript: opReturnScript,
+	})
+
 	// Create P2PKH locking script
 	lockingScript, err := p2pkh.Lock(addr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create locking script: %w", err)
 	}
 
-	// Add outputs
+	// Add value outputs starting from index 1
 	for i := 0; i < numOutputs; i++ {
 		amount := amountPerOutput
 		if i == numOutputs-1 {
@@ -99,17 +110,6 @@ func (b *Builder) BuildSplitForParallelBlast(utxo *models.UTXO, numOutputs int) 
 			LockingScript: lockingScript,
 		})
 	}
-
-	// Add OP_RETURN output with "Who is John Galt?" message
-	opReturnScript, err := createOpReturnScript("Who is John Galt?")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create OP_RETURN script: %w", err)
-	}
-
-	tx.AddOutput(&transaction.TransactionOutput{
-		Satoshis:      0, // OP_RETURN outputs have 0 value
-		LockingScript: opReturnScript,
-	})
 
 	// Sign the transaction
 	err = tx.Sign()
@@ -185,15 +185,7 @@ func (b *Builder) BuildParallelTransactions(parentTxID string, parentOutputs []*
 			continue
 		}
 
-		// Create single output with remaining value
-		outputAmount := utxo.Amount - fee
-
-		tx.AddOutput(&transaction.TransactionOutput{
-			Satoshis:      outputAmount,
-			LockingScript: lockingScript,
-		})
-
-		// Add OP_RETURN output
+		// FIRST: Add OP_RETURN output (index 0)
 		opReturnScript, err := createOpReturnScript("Who is John Galt?")
 		if err != nil {
 			return nil, fmt.Errorf("failed to create OP_RETURN script: %w", err)
@@ -202,6 +194,14 @@ func (b *Builder) BuildParallelTransactions(parentTxID string, parentOutputs []*
 		tx.AddOutput(&transaction.TransactionOutput{
 			Satoshis:      0,
 			LockingScript: opReturnScript,
+		})
+
+		// SECOND: Add single output with remaining value (index 1)
+		outputAmount := utxo.Amount - fee
+
+		tx.AddOutput(&transaction.TransactionOutput{
+			Satoshis:      outputAmount,
+			LockingScript: lockingScript,
 		})
 
 		// Sign the transaction

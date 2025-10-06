@@ -2,7 +2,6 @@ package blaster
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/bsv-blockchain/go-sdk/transaction"
@@ -88,11 +87,9 @@ func (b *Builder) BuildConsolidationTransaction(utxos []*models.UTXO) (*transact
 		return nil, fmt.Errorf("failed to sign consolidation transaction: %w", err)
 	}
 
-	// Log consolidation details
-	log.Printf("Created consolidation transaction: %d inputs -> 1 output", len(utxos))
-	log.Printf("Total input: %d sats, Fee: %d sats, Output: %d sats", totalInput, fee, outputAmount)
-	log.Printf("Consolidation TxID: %s", tx.TxID())
-	log.Printf("Consolidation TX Size: %d bytes", tx.Size())
+	// Suppressed consolidation logging for UI compatibility
+	_ = tx.TxID() // Keep for side effects if any
+	_ = tx.Size() // Keep for side effects if any
 
 	return tx, nil
 }

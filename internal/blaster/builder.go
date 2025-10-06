@@ -3,7 +3,6 @@ package blaster
 import (
 	"encoding/hex"
 	"fmt"
-	"log"
 
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/bsv-blockchain/go-sdk/transaction"
@@ -87,7 +86,7 @@ func (b *Builder) BuildSplitTransaction(utxo *models.UTXO, numOutputs int) (*tra
 		// If amount per output is less than dust, reduce number of outputs
 		numOutputs = int(totalOutputAmount / DustAmount)
 		amountPerOutput = DustAmount
-		log.Printf("Reduced outputs to %d to maintain dust limit", numOutputs)
+		// Suppressed: log.Printf("Reduced outputs to %d to maintain dust limit", numOutputs)
 	}
 
 	// Create new transaction
@@ -138,11 +137,9 @@ func (b *Builder) BuildSplitTransaction(utxo *models.UTXO, numOutputs int) (*tra
 		return nil, fmt.Errorf("failed to sign transaction: %w", err)
 	}
 
-	// Log transaction details
-	log.Printf("Created transaction: %d inputs, %d outputs, %d sats per output, %d total fee",
-		len(tx.Inputs), len(tx.Outputs), amountPerOutput, fee)
-	log.Printf("Transaction ID: %s", tx.TxID())
-	log.Printf("Transaction size: %d bytes", tx.Size())
+	// Suppressed transaction logging for UI compatibility
+	_ = tx.TxID() // Keep for side effects if any
+	_ = tx.Size() // Keep for side effects if any
 
 	return tx, nil
 }
@@ -190,10 +187,7 @@ func (b *Builder) addInputFromUTXO(tx *transaction.Transaction, utxo *models.UTX
 		return fmt.Errorf("failed to create locking script: %w", err)
 	}
 
-	// For debugging: log the locking script we're using
-	log.Printf("Using locking script for UTXO %s:%d - %s", txHash[:8], utxo.Vout, hex.EncodeToString(*prevLockingScript))
-	log.Printf("Debug: Address from key manager: %s", address)
-	log.Printf("Debug: Public key hash: %s", hex.EncodeToString(addr.PublicKeyHash))
+	// Suppressed debug logging for UI compatibility
 
 	// Create unlocking template with the private key
 	unlockingTemplate, err := p2pkh.Unlock(privKey, nil)

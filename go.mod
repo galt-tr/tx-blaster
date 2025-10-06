@@ -8,7 +8,9 @@ require (
 	github.com/bitcoin-sv/teranode v0.0.0-00010101000000-000000000000
 	github.com/bsv-blockchain/go-bt/v2 v2.4.6
 	github.com/bsv-blockchain/go-sdk v1.2.8
+	github.com/gdamore/tcell/v2 v2.8.1
 	github.com/mattn/go-sqlite3 v1.14.32
+	github.com/rivo/tview v0.42.0
 	github.com/spf13/cobra v1.10.1
 	google.golang.org/grpc v1.75.0
 )
@@ -58,6 +60,7 @@ require (
 	github.com/emicklei/go-restful/v3 v3.12.2 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
+	github.com/gdamore/encoding v1.0.1 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-openapi/jsonpointer v0.21.1 // indirect
@@ -95,9 +98,11 @@ require (
 	github.com/libsv/go-bt/v2 v2.2.5 // indirect
 	github.com/libsv/go-p2p v0.3.3 // indirect
 	github.com/looplab/fsm v1.0.2 // indirect
+	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/mailru/easyjson v0.9.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
@@ -115,6 +120,7 @@ require (
 	github.com/prometheus/procfs v0.17.0 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
+	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rs/zerolog v1.33.0 // indirect
 	github.com/sercand/kuberesolver/v6 v6.0.1 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect

@@ -36,7 +36,7 @@ func (b *Builder) BuildMassiveSplitTransaction(utxo *models.UTXO, targetOutputs 
 	actualOutputs := targetOutputs
 	if actualOutputs > maxOutputsBySize {
 		actualOutputs = maxOutputsBySize
-		fmt.Printf("Note: Limiting outputs to %d due to transaction size constraints\n", actualOutputs)
+		// Suppressed: fmt.Printf("Note: Limiting outputs to %d due to transaction size constraints\n", actualOutputs)
 	}
 
 	// Calculate fee (1 sat/byte)
@@ -55,7 +55,7 @@ func (b *Builder) BuildMassiveSplitTransaction(utxo *models.UTXO, targetOutputs 
 			return nil, 0, fmt.Errorf("insufficient funds: UTXO has %d sats, cannot create any outputs after %d fee",
 				utxo.Amount, fee)
 		}
-		fmt.Printf("Note: Reducing outputs to %d due to insufficient funds\n", actualOutputs)
+		// Suppressed: fmt.Printf("Note: Reducing outputs to %d due to insufficient funds\n", actualOutputs)
 
 		// Recalculate fee with new output count
 		estimatedSize = baseSize + (outputSize * actualOutputs)
@@ -119,14 +119,9 @@ func (b *Builder) BuildMassiveSplitTransaction(utxo *models.UTXO, targetOutputs 
 		return nil, 0, fmt.Errorf("failed to sign transaction: %w", err)
 	}
 
-	// Log transaction details
-	fmt.Printf("Created massive split transaction:\n")
-	fmt.Printf("  - Transaction ID: %s\n", tx.TxID())
-	fmt.Printf("  - Inputs: 1 (%d sats)\n", utxo.Amount)
-	fmt.Printf("  - Outputs: %d value outputs + 1 OP_RETURN\n", actualOutputs)
-	fmt.Printf("  - Amount per output: %d sats\n", amountPerOutput)
-	fmt.Printf("  - Total fee: %d sats\n", fee)
-	fmt.Printf("  - Transaction size: %d bytes\n", tx.Size())
+	// Suppressed transaction details logging for UI compatibility
+	_ = tx.TxID() // Keep for side effects if any
+	_ = tx.Size() // Keep for side effects if any
 
 	return tx, actualOutputs, nil
 }

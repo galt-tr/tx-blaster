@@ -2,7 +2,6 @@ package blaster
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/bsv-blockchain/go-sdk/transaction"
@@ -91,14 +90,8 @@ func (b *Builder) BuildSimpleTransaction(utxo *models.UTXO) (*transaction.Transa
 		if unlockingScriptLen == 0 {
 			return nil, fmt.Errorf("transaction not properly signed - unlocking script is empty")
 		}
-		// Log for debugging
-		log.Printf("Transaction %s signed with unlocking script length: %d bytes", tx.TxID(), unlockingScriptLen)
-		log.Printf("  Input 0: spending %s:%d (amount: %d sats)", utxo.TxHash, utxo.Vout, utxo.Amount)
-		log.Printf("  Output 0 (OP_RETURN): 0 sats")
-		log.Printf("  Output 1 (main): %d sats", tx.Outputs[1].Satoshis)
-		if len(tx.Outputs) > 2 {
-			log.Printf("  Output 2 (dust): %d sats", tx.Outputs[2].Satoshis)
-		}
+		// Suppressed debug logging for UI compatibility
+		_ = tx.TxID() // Keep for side effects if any
 	}
 
 	return tx, nil

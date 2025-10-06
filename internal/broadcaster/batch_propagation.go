@@ -77,7 +77,7 @@ func (db *DirectBatchBroadcaster) BroadcastTransactionBatch(txHexes []string) ([
 	}
 	
 	// Send the entire batch in one gRPC call
-	db.logger.Infof("Sending batch of %d transactions via gRPC", len(items))
+	// Suppressed for UI compatibility: db.logger.Infof("Sending batch of %d transactions via gRPC", len(items))
 	response, err := db.client.ProcessTransactionBatch(ctx, request)
 	if err != nil {
 		// If the batch call fails, all transactions fail

@@ -52,16 +52,14 @@ func (b *Builder) BuildSplitForParallelBlast(utxo *models.UTXO, numOutputs int) 
 			return nil, fmt.Errorf("insufficient funds: UTXO has %d sats, after %d fee only %d sats remain, need at least %d sats per output",
 				utxo.Amount, fee, totalOutputAmount, minDust)
 		}
-		fmt.Printf("Reducing outputs from %d to %d due to insufficient funds\n", numOutputs, maxOutputs)
+		// Suppressed: fmt.Printf("Reducing outputs from %d to %d due to insufficient funds\n", numOutputs, maxOutputs)
 		numOutputs = maxOutputs
 	}
 	
 	amountPerOutput := totalOutputAmount / uint64(numOutputs)
 	remainder := totalOutputAmount % uint64(numOutputs)
 	
-	// Debug logging
-	fmt.Printf("BuildSplitForParallelBlast: UTXO amount=%d, fee=%d, totalOutputAmount=%d, numOutputs=%d, amountPerOutput=%d, remainder=%d\n",
-		utxo.Amount, fee, totalOutputAmount, numOutputs, amountPerOutput, remainder)
+	// Suppressed debug logging for UI compatibility
 	
 	// Ensure outputs meet minimum dust threshold
 	if amountPerOutput < minDust {
@@ -117,9 +115,9 @@ func (b *Builder) BuildSplitForParallelBlast(utxo *models.UTXO, numOutputs int) 
 		return nil, fmt.Errorf("failed to sign transaction: %w", err)
 	}
 
-	// Log transaction details for debugging
-	fmt.Printf("Split transaction created: ID=%s, %d inputs, %d outputs, size=%d bytes\n",
-		tx.TxID(), len(tx.Inputs), len(tx.Outputs), tx.Size())
+	// Suppressed transaction logging for UI compatibility
+	_ = tx.TxID() // Keep for side effects if any
+	_ = tx.Size() // Keep for side effects if any
 
 	return tx, nil
 }

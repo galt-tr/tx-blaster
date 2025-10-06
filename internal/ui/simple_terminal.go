@@ -53,6 +53,7 @@ func (t *SimpleTerminal) Run() {
 	if err != nil {
 		// Fall back to normal mode if raw mode fails
 		fmt.Printf("Warning: Could not set raw mode: %v\n", err)
+		time.Sleep(2 * time.Second)
 	} else {
 		t.oldState = oldState
 	}
@@ -62,6 +63,7 @@ func (t *SimpleTerminal) Run() {
 	// Initial render
 	t.clearScreen()
 	t.render()
+	os.Stdout.Sync() // Ensure initial render is displayed
 
 	// Start goroutines
 	go t.updateLoop()
@@ -203,6 +205,7 @@ func (t *SimpleTerminal) messageHandler() {
 
 func (t *SimpleTerminal) clearScreen() {
 	fmt.Print("\033[2J\033[H\033[?25l") // Clear screen, move to top, hide cursor
+	os.Stdout.Sync()
 }
 
 func (t *SimpleTerminal) render() {
@@ -267,6 +270,9 @@ func (t *SimpleTerminal) render() {
 	// Controls
 	fmt.Printf("\033[14;1H\033[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m\033[K\n")
 	fmt.Printf("\033[15;1H [P]ause [R]ate [Q]uit [H]elp\033[K\n")
+
+	// Force flush to ensure output is displayed
+	os.Stdout.Sync()
 }
 
 func (t *SimpleTerminal) UpdateStats(stats Stats) {

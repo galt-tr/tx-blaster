@@ -43,6 +43,32 @@ func SuppressAll() {
 	log.SetOutput(io.Discard)
 }
 
+// SuppressLogsOnly suppresses only log output, keeping stdout for UI
+func SuppressLogsOnly() {
+	if suppressLogs {
+		return
+	}
+
+	suppressLogs = true
+
+	// Only redirect stderr (where logs typically go) to /dev/null
+	var err error
+	devNull, err = os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		return // Can't suppress, but continue anyway
+	}
+
+	// Save original stderr only
+	originalStderr, _ = syscall.Dup(2)
+
+	// Redirect stderr to /dev/null at the file descriptor level
+	syscall.Dup2(int(devNull.Fd()), 2)
+
+	// Also redirect log package output
+	originalLogOutput = log.Writer()
+	log.SetOutput(io.Discard)
+}
+
 // RestoreAll restores all console output
 func RestoreAll() {
 	if !suppressLogs {

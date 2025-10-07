@@ -5,7 +5,6 @@ import (
 
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/bsv-blockchain/go-sdk/transaction"
-	"github.com/bsv-blockchain/go-sdk/transaction/template/p2pkh"
 	"github.com/tx-blaster/tx-blaster/pkg/models"
 )
 
@@ -40,10 +39,10 @@ func (b *Builder) BuildSplitForParallelBlast(utxo *models.UTXO, numOutputs int) 
 
 	// Calculate amount per output
 	totalOutputAmount := utxo.Amount - fee
-	
+
 	// Minimum viable dust amount for BSV (546 satoshis is standard)
 	minDust := uint64(546)
-	
+
 	// Check if we have enough for the requested outputs
 	if totalOutputAmount < uint64(numOutputs)*minDust {
 		// Reduce number of outputs to what we can afford
@@ -55,22 +54,15 @@ func (b *Builder) BuildSplitForParallelBlast(utxo *models.UTXO, numOutputs int) 
 		// Suppressed: fmt.Printf("Reducing outputs from %d to %d due to insufficient funds\n", numOutputs, maxOutputs)
 		numOutputs = maxOutputs
 	}
-	
+
 	amountPerOutput := totalOutputAmount / uint64(numOutputs)
 	remainder := totalOutputAmount % uint64(numOutputs)
-	
+
 	// Suppressed debug logging for UI compatibility
-	
+
 	// Ensure outputs meet minimum dust threshold
 	if amountPerOutput < minDust {
 		return nil, fmt.Errorf("amount per output %d is below minimum dust limit %d", amountPerOutput, minDust)
-	}
-
-	// Get address for outputs
-	address := b.keyManager.GetAddress()
-	addr, err := script.NewAddressFromString(address)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse address: %w", err)
 	}
 
 	// FIRST: Add OP_RETURN output with "Who is John Galt?" message (index 0)
@@ -84,11 +76,8 @@ func (b *Builder) BuildSplitForParallelBlast(utxo *models.UTXO, numOutputs int) 
 		LockingScript: opReturnScript,
 	})
 
-	// Create P2PKH locking script
-	lockingScript, err := p2pkh.Lock(addr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create locking script: %w", err)
-	}
+	// Create custom locking script (OP_NOP - hex 0x61)
+	lockingScript, _ := script.NewFromHex("61")
 
 	// Add value outputs starting from index 1
 	for i := 0; i < numOutputs; i++ {
@@ -132,18 +121,11 @@ func (b *Builder) BuildParallelTransactions(parentTxID string, parentOutputs []*
 
 	transactions := make([]*transaction.Transaction, 0, count)
 
-	// Get address for outputs
+	// Get address for reference (used for UTXO address field)
 	address := b.keyManager.GetAddress()
-	addr, err := script.NewAddressFromString(address)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse address: %w", err)
-	}
 
-	// Create P2PKH locking script for outputs
-	lockingScript, err := p2pkh.Lock(addr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create locking script: %w", err)
-	}
+	// Create custom locking script (OP_NOP - hex 0x61) for outputs
+	lockingScript, _ := script.NewFromHex("61")
 
 	for i := 0; i < count; i++ {
 		// Skip if this is the OP_RETURN output
@@ -153,12 +135,12 @@ func (b *Builder) BuildParallelTransactions(parentTxID string, parentOutputs []*
 
 		// Create a UTXO representing this output from the parent transaction
 		utxo := &models.UTXO{
-			TxHash:      parentTxID,
-			Vout:        uint32(i),
-			Amount:      parentOutputs[i].Satoshis,
-			Address:     address,
-			Spent:       false,
-			IsCoinbase:  false,
+			TxHash:     parentTxID,
+			Vout:       uint32(i),
+			Amount:     parentOutputs[i].Satoshis,
+			Address:    address,
+			Spent:      false,
+			IsCoinbase: false,
 		}
 
 		// Create new transaction

@@ -8,7 +8,6 @@ import (
 
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/bsv-blockchain/go-sdk/transaction"
-	"github.com/bsv-blockchain/go-sdk/transaction/template/p2pkh"
 	"github.com/tx-blaster/tx-blaster/internal/keys"
 	"github.com/tx-blaster/tx-blaster/pkg/models"
 )
@@ -18,7 +17,7 @@ const (
 	testWIF     = "L3x8yycFmvaKEemPyCxY11PWQmukpKj2U2HmDHmZ4MykDqLDrBTM"
 	testTxHash  = "5e3014372338f079f005eedc85359e4d96b8440e7dbeb8c35c4182e0c19a1a12"
 	testAddress = "1EQJvpsmhazYCcKX5Au6AZmZKEDqLpeUEB"
-	
+
 	// Valid testnet WIF keys (compressed)
 	testnetWIF1 = "cMzLdeGd5vEqxB8B6VFQoRopQ3sLAAvEzDAoQgvX54xwofSWj1fx"
 	testnetWIF2 = "cN9spWsvaxA8taS7DFMxnk1yJD2gaF2PX1npuTpy3vuZFJdwavaw"
@@ -217,16 +216,8 @@ func TestMultipleInputSigning(t *testing.T) {
 		t.Fatalf("Failed to add second input: %v", err)
 	}
 
-	address := km.GetAddress()
-	addr, err := script.NewAddressFromString(address)
-	if err != nil {
-		t.Fatalf("Failed to parse address: %v", err)
-	}
-
-	lockingScript, err := p2pkh.Lock(addr)
-	if err != nil {
-		t.Fatalf("Failed to create locking script: %v", err)
-	}
+	// Create custom locking script (OP_NOP - hex 0x61)
+	lockingScript := script.NewFromHex("61")
 
 	tx.AddOutput(&transaction.TransactionOutput{
 		Satoshis:      100000,
@@ -282,7 +273,7 @@ func TestChainedTransactionSigning(t *testing.T) {
 		inputTxID := input.SourceTXID.String()
 		if inputTxID != prevTxID && !strings.HasPrefix(prevTxID, inputTxID) {
 			// The SourceTXID is already in the correct format
-			
+
 			if inputTxID != prevTxID {
 				t.Errorf("Transaction %d: input references wrong transaction", i)
 				t.Errorf("  Expected: %s", prevTxID)
@@ -525,16 +516,8 @@ func TestScriptExecution(t *testing.T) {
 	input := tx.Inputs[0]
 	unlockingScript := input.UnlockingScript
 
-	address := km.GetAddress()
-	addr, err := script.NewAddressFromString(address)
-	if err != nil {
-		t.Fatalf("Failed to parse address: %v", err)
-	}
-
-	prevLockingScript, err := p2pkh.Lock(addr)
-	if err != nil {
-		t.Fatalf("Failed to create locking script: %v", err)
-	}
+	// Create custom locking script (OP_NOP - hex 0x61) matching the production code
+	prevLockingScript, _ := script.NewFromHex("61")
 
 	combinedScript := append(*unlockingScript, *prevLockingScript...)
 
@@ -763,7 +746,7 @@ func TestExtractPublicKeyFromUnlockingScript(t *testing.T) {
 
 func TestSigningEmptyTransaction(t *testing.T) {
 	tx := transaction.NewTransaction()
-	
+
 	err := tx.Sign()
 	if err == nil {
 		t.Log("Empty transaction 'signed' successfully (no-op)")
@@ -882,7 +865,7 @@ func TestMixedNetworkTransactions(t *testing.T) {
 			}
 
 			builder := NewBuilder(km)
-			
+
 			// Build a split transaction
 			utxo := createTestUTXO()
 			utxo.Amount = 10000
@@ -937,7 +920,7 @@ func TestTestnetChainedTransactions(t *testing.T) {
 		if i > 0 {
 			inputTxID := tx.Inputs[0].SourceTXID.String()
 			if inputTxID != prevTxID {
-				t.Errorf("Transaction %d: broken chain, expected input from %s, got %s", 
+				t.Errorf("Transaction %d: broken chain, expected input from %s, got %s",
 					i, prevTxID, inputTxID)
 			}
 		}

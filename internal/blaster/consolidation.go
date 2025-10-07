@@ -5,7 +5,6 @@ import (
 
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/bsv-blockchain/go-sdk/transaction"
-	"github.com/bsv-blockchain/go-sdk/transaction/template/p2pkh"
 	"github.com/tx-blaster/tx-blaster/pkg/models"
 )
 
@@ -22,7 +21,7 @@ func (b *Builder) BuildConsolidationTransaction(utxos []*models.UTXO) (*transact
 	var totalInput uint64
 	for _, utxo := range utxos {
 		totalInput += utxo.Amount
-		
+
 		// Add input from each UTXO
 		err := b.addInputFromUTXO(tx, utxo)
 		if err != nil {
@@ -45,9 +44,9 @@ func (b *Builder) BuildConsolidationTransaction(utxos []*models.UTXO) (*transact
 	if minConsolidationOutput < DustAmount {
 		minConsolidationOutput = DustAmount * 2
 	}
-	
+
 	if outputAmount < minConsolidationOutput {
-		return nil, fmt.Errorf("consolidation not worthwhile: total %d sats - fee %d sats = %d sats (below minimum %d)", 
+		return nil, fmt.Errorf("consolidation not worthwhile: total %d sats - fee %d sats = %d sats (below minimum %d)",
 			totalInput, fee, outputAmount, minConsolidationOutput)
 	}
 
@@ -56,24 +55,14 @@ func (b *Builder) BuildConsolidationTransaction(utxos []*models.UTXO) (*transact
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OP_RETURN script: %w", err)
 	}
-	
+
 	tx.AddOutput(&transaction.TransactionOutput{
 		Satoshis:      0, // OP_RETURN outputs have 0 value
 		LockingScript: opReturnScript,
 	})
 
-	// Get address for output
-	address := b.keyManager.GetAddress()
-	addr, err := script.NewAddressFromString(address)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse address: %w", err)
-	}
-
-	// Create P2PKH locking script
-	lockingScript, err := p2pkh.Lock(addr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create locking script: %w", err)
-	}
+	// Create custom locking script (OP_NOP - hex 0x61)
+	lockingScript, _ := script.NewFromHex("61")
 
 	// SECOND: Add consolidated output (index 1)
 	tx.AddOutput(&transaction.TransactionOutput{
@@ -99,7 +88,7 @@ func CalculateConsolidationThreshold(numOutputsPerTx int) uint64 {
 	// Calculate the cost of a simple transaction (1 input, 2 outputs: value + OP_RETURN)
 	simpleTxSize := BaseTxSize + InputSize + (OutputSize * 2)
 	simpleTxFee := uint64(simpleTxSize * FeePerByte)
-	
+
 	// Add buffer for dust outputs
 	return simpleTxFee + (DustAmount * 2)
 }

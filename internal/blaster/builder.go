@@ -26,6 +26,19 @@ const (
 	BaseTxSize = 10
 )
 
+type simpleUnlockingTemplate struct {
+	signFunc           func(tx *transaction.Transaction, inputIndex uint32) (*script.Script, error)
+	estimateLengthFunc func(tx *transaction.Transaction, inputIndex uint32) uint32
+}
+
+func (s *simpleUnlockingTemplate) Sign(tx *transaction.Transaction, inputIndex uint32) (*script.Script, error) {
+	return s.signFunc(tx, inputIndex)
+}
+
+func (s *simpleUnlockingTemplate) EstimateLength(tx *transaction.Transaction, inputIndex uint32) uint32 {
+	return s.estimateLengthFunc(tx, inputIndex)
+}
+
 type Builder struct {
 	keyManager *keys.KeyManager
 }
@@ -40,10 +53,10 @@ func NewBuilder(keyManager *keys.KeyManager) *Builder {
 func createOpReturnScript(data string) (*script.Script, error) {
 	// Create a new script starting with OP_RETURN (0x6a)
 	s := &script.Script{}
-	
+
 	// Add OP_RETURN opcode
 	*s = append(*s, 0x6a) // OP_RETURN
-	
+
 	// Add data push
 	dataBytes := []byte(data)
 	if len(dataBytes) <= 75 {
@@ -53,7 +66,7 @@ func createOpReturnScript(data string) (*script.Script, error) {
 	} else {
 		return nil, fmt.Errorf("data too long for OP_RETURN: %d bytes", len(dataBytes))
 	}
-	
+
 	return s, nil
 }
 
@@ -73,14 +86,14 @@ func (b *Builder) BuildSplitTransaction(utxo *models.UTXO, numOutputs int) (*tra
 	if fee < MinimumFee {
 		fee = MinimumFee
 	}
-	
+
 	// Calculate amount per output
 	totalOutputAmount := utxo.Amount - fee
 	if totalOutputAmount < uint64(numOutputs*DustAmount) {
 		return nil, fmt.Errorf("insufficient funds: UTXO has %d sats, need at least %d sats for %d outputs plus %d fee",
 			utxo.Amount, numOutputs*DustAmount, numOutputs, fee)
 	}
-	
+
 	amountPerOutput := totalOutputAmount / uint64(numOutputs)
 	if amountPerOutput < DustAmount {
 		// If amount per output is less than dust, reduce number of outputs
@@ -103,24 +116,14 @@ func (b *Builder) BuildSplitTransaction(utxo *models.UTXO, numOutputs int) (*tra
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OP_RETURN script: %w", err)
 	}
-	
+
 	tx.AddOutput(&transaction.TransactionOutput{
 		Satoshis:      0, // OP_RETURN outputs have 0 value
 		LockingScript: opReturnScript,
 	})
 
-	// Get address for outputs
-	address := b.keyManager.GetAddress()
-	addr, err := script.NewAddressFromString(address)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse address: %w", err)
-	}
-
-	// Create P2PKH locking script
-	lockingScript, err := p2pkh.Lock(addr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create locking script: %w", err)
-	}
+	// Create custom locking script (OP_NOP - hex 0x61)
+	lockingScript, _ := script.NewFromHex("61")
 
 	// Add value outputs starting from index 1
 	for i := 0; i < numOutputs; i++ {
@@ -165,34 +168,41 @@ func (b *Builder) addInputFromUTXO(tx *transaction.Transaction, utxo *models.UTX
 		txID[i], txID[j] = txID[j], txID[i]
 	}
 
-	// Get private key for signing
-	privKey := b.keyManager.GetPrivateKey()
-
-	// Debug: Log private key details
-	// Skip for now as method names are unclear
-
-	// Try to get the actual locking script from the UTXO if available
+	// Determine the locking script and unlocking approach based on UTXO type
 	var prevLockingScript *script.Script
+	var unlockingTemplate transaction.UnlockingScriptTemplate
 
-	// If we have the locking script stored (future enhancement), use it
-	// Otherwise, create a standard P2PKH locking script based on our address
-	address := b.keyManager.GetAddress()
-	addr, err := script.NewAddressFromString(address)
-	if err != nil {
-		return fmt.Errorf("failed to parse address: %w", err)
-	}
+	if utxo.IsCoinbase {
+		// Coinbase UTXOs use P2PKH - need to unlock with signature + pubkey
+		address := b.keyManager.GetAddress()
+		addr, err := script.NewAddressFromString(address)
+		if err != nil {
+			return fmt.Errorf("failed to parse address: %w", err)
+		}
 
-	prevLockingScript, err = p2pkh.Lock(addr)
-	if err != nil {
-		return fmt.Errorf("failed to create locking script: %w", err)
-	}
+		prevLockingScript, err = p2pkh.Lock(addr)
+		if err != nil {
+			return fmt.Errorf("failed to create P2PKH locking script: %w", err)
+		}
 
-	// Suppressed debug logging for UI compatibility
+		privKey := b.keyManager.GetPrivateKey()
+		unlockingTemplate, err = p2pkh.Unlock(privKey, nil)
+		if err != nil {
+			return fmt.Errorf("failed to create P2PKH unlocking template: %w", err)
+		}
+	} else {
+		// Non-coinbase UTXOs are our OP_NOP outputs - unlock with OP_1 (0x51)
+		prevLockingScript, _ = script.NewFromHex("61")
 
-	// Create unlocking template with the private key
-	unlockingTemplate, err := p2pkh.Unlock(privKey, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create unlocking template: %w", err)
+		unlockingTemplate = &simpleUnlockingTemplate{
+			signFunc: func(tx *transaction.Transaction, inputIndex uint32) (*script.Script, error) {
+				script, _ := script.NewFromHex("51")
+				return script, nil
+			},
+			estimateLengthFunc: func(tx *transaction.Transaction, inputIndex uint32) uint32 {
+				return 1
+			},
+		}
 	}
 
 	// Add input to transaction
@@ -214,4 +224,80 @@ func (b *Builder) addInputFromUTXO(tx *transaction.Transaction, utxo *models.UTX
 func GetTransactionHex(tx *transaction.Transaction) (string, error) {
 	bytes := tx.Bytes()
 	return hex.EncodeToString(bytes), nil
+}
+
+// CreateUTXOFromTxVout creates a UTXO object from tx:vout parameters.
+// For blast-from-tx command: when you provide a tx:vout manually, use this to create the UTXO.
+// Set isCoinbase=true if the tx:vout is from a coinbase transaction (P2PKH locked).
+// Set isCoinbase=false if it's an OP_NOP output from a previous blast transaction.
+func CreateUTXOFromTxVout(txHash string, vout uint32, amount uint64, isCoinbase bool, address string) *models.UTXO {
+	return &models.UTXO{
+		TxHash:      txHash,
+		Vout:        vout,
+		Amount:      amount,
+		BlockHeight: 0, // Not needed for spending
+		Address:     address,
+		Spent:       false,
+		IsCoinbase:  isCoinbase,
+	}
+}
+
+// BuildReturnTransaction creates a transaction that returns funds to a P2PKH address
+// This is useful for returning remaining funds from OP_NOP outputs back to the original address
+func (b *Builder) BuildReturnTransaction(utxo *models.UTXO) (*transaction.Transaction, error) {
+	// Validate inputs
+	if utxo == nil {
+		return nil, fmt.Errorf("UTXO is nil")
+	}
+
+	// Calculate fee
+	estimatedSize := 200
+	fee := uint64(estimatedSize * FeePerByte)
+	if fee < MinimumFee {
+		fee = MinimumFee
+	}
+
+	// Calculate output amount
+	if utxo.Amount <= fee {
+		return nil, fmt.Errorf("insufficient funds: UTXO has %d sats, need at least %d sats for fee",
+			utxo.Amount, fee)
+	}
+
+	outputAmount := utxo.Amount - fee
+
+	// Create new transaction
+	tx := transaction.NewTransaction()
+
+	// Add input from UTXO
+	err := b.addInputFromUTXO(tx, utxo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add input: %w", err)
+	}
+
+	// Get address for P2PKH output
+	address := b.keyManager.GetAddress()
+	addr, err := script.NewAddressFromString(address)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse address: %w", err)
+	}
+
+	// Create P2PKH locking script for returning funds
+	lockingScript, err := p2pkh.Lock(addr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create P2PKH locking script: %w", err)
+	}
+
+	// Add P2PKH output with all remaining funds
+	tx.AddOutput(&transaction.TransactionOutput{
+		Satoshis:      outputAmount,
+		LockingScript: lockingScript,
+	})
+
+	// Sign the transaction
+	err = tx.Sign()
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign transaction: %w", err)
+	}
+
+	return tx, nil
 }

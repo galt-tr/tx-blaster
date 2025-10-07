@@ -5,7 +5,6 @@ import (
 
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/bsv-blockchain/go-sdk/transaction"
-	"github.com/bsv-blockchain/go-sdk/transaction/template/p2pkh"
 	"github.com/tx-blaster/tx-blaster/pkg/models"
 )
 
@@ -53,18 +52,8 @@ func (b *Builder) BuildSimpleTransaction(utxo *models.UTXO) (*transaction.Transa
 		LockingScript: opReturnScript,
 	})
 
-	// Get address for outputs
-	address := b.keyManager.GetAddress()
-	addr, err := script.NewAddressFromString(address)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse address: %w", err)
-	}
-
-	// Create P2PKH locking script
-	lockingScript, err := p2pkh.Lock(addr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create locking script: %w", err)
-	}
+	// Create custom locking script (OP_NOP - hex 0x61)
+	lockingScript, _ := script.NewFromHex("61")
 
 	// SECOND: Add main output (most of the value) at index 1
 	tx.AddOutput(&transaction.TransactionOutput{

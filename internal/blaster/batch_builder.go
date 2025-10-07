@@ -5,7 +5,6 @@ import (
 
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/bsv-blockchain/go-sdk/transaction"
-	"github.com/bsv-blockchain/go-sdk/transaction/template/p2pkh"
 	"github.com/tx-blaster/tx-blaster/pkg/models"
 )
 
@@ -15,14 +14,14 @@ func (b *Builder) BuildBatchTransactions(utxo *models.UTXO, maxOutputs int) ([]*
 	if maxOutputs <= 0 {
 		return nil, fmt.Errorf("maxOutputs must be positive")
 	}
-	
+
 	// Create one large split transaction with many outputs
 	// This avoids the TX_MISSING_PARENT issue entirely
 	tx, err := b.BuildOptimizedSplitTransaction(utxo, maxOutputs)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Return a single transaction in an array
 	return []*transaction.Transaction{tx}, nil
 }
@@ -40,35 +39,35 @@ func (b *Builder) BuildOptimizedSplitTransaction(utxo *models.UTXO, targetOutput
 	// Calculate the maximum number of outputs we can create
 	// Transaction size limit is ~100KB for most nodes
 	maxTxSize := 90000 // Conservative limit in bytes
-	
+
 	// Calculate sizes
 	baseSize := BaseTxSize + InputSize + 50 // Include OP_RETURN
 	outputSize := OutputSize
-	
+
 	// Calculate maximum outputs that fit in size limit
 	maxOutputsBySize := (maxTxSize - baseSize) / outputSize
 	if targetOutputs > maxOutputsBySize {
 		targetOutputs = maxOutputsBySize
 	}
-	
+
 	// Calculate fee (1 sat/byte)
 	estimatedSize := baseSize + (outputSize * targetOutputs)
 	fee := uint64(estimatedSize * FeePerByte)
 	if fee < MinimumFee {
 		fee = MinimumFee
 	}
-	
+
 	// Calculate amount per output
 	totalOutputAmount := utxo.Amount - fee
 	if totalOutputAmount < uint64(targetOutputs*DustAmount) {
 		// Reduce outputs to what we can afford
 		targetOutputs = int(totalOutputAmount / DustAmount)
 		if targetOutputs <= 0 {
-			return nil, fmt.Errorf("insufficient funds: UTXO has %d sats, cannot create any outputs after %d fee", 
+			return nil, fmt.Errorf("insufficient funds: UTXO has %d sats, cannot create any outputs after %d fee",
 				utxo.Amount, fee)
 		}
 	}
-	
+
 	amountPerOutput := totalOutputAmount / uint64(targetOutputs)
 	if amountPerOutput < DustAmount {
 		amountPerOutput = DustAmount
@@ -89,24 +88,14 @@ func (b *Builder) BuildOptimizedSplitTransaction(utxo *models.UTXO, targetOutput
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OP_RETURN script: %w", err)
 	}
-	
+
 	tx.AddOutput(&transaction.TransactionOutput{
 		Satoshis:      0, // OP_RETURN outputs have 0 value
 		LockingScript: opReturnScript,
 	})
 
-	// Get address for outputs
-	address := b.keyManager.GetAddress()
-	addr, err := script.NewAddressFromString(address)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse address: %w", err)
-	}
-
-	// Create P2PKH locking script
-	lockingScript, err := p2pkh.Lock(addr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create locking script: %w", err)
-	}
+	// Create custom locking script (OP_NOP - hex 0x61)
+	lockingScript, _ := script.NewFromHex("61")
 
 	// Add value outputs starting from index 1
 	for i := 0; i < targetOutputs; i++ {
